@@ -5,7 +5,7 @@ import org.junit.jupiter.api.*
 import tools.jackson.databind.SerializationFeature.*
 import tools.jackson.module.kotlin.*
 
-class StreamingWithJaskson3Test {
+class StreamingWithJaskson3FixedTest {
 	data class MyPOJO(val s: String)
 
 	@Test @Timeout(5) fun test() {
@@ -19,12 +19,15 @@ class StreamingWithJaskson3Test {
 		val readIter = objectReader.readValues(parser, MyPOJO::class.java)
 
 		generator.writePOJO(MyPOJO("1"))
+		generator.flush() // this is the fix
 		println(readIter.next())
 
 		generator.writePOJO(MyPOJO("2"))
+		generator.flush() // this is the fix
 		println(readIter.next())
 
 		generator.writePOJO(MyPOJO("3"))
+		generator.flush() // this is the fix
 		println(readIter.next())
 	}
 }

@@ -1,84 +1,30 @@
 package my
 
-import java.nio.file.*
-import java.nio.file.StandardOpenOption.*
-import java.util.concurrent.*
-import kotlin.concurrent.*
-import kotlin.io.path.*
-import com.fasterxml.jackson.databind.*
+import com.fasterxml.jackson.databind.SerializationFeature.*
 import com.fasterxml.jackson.module.kotlin.*
-import org.assertj.core.api.Assertions.assertThat as t
+import org.apache.commons.io.output.*
 import org.junit.jupiter.api.*
-import org.junit.jupiter.api.io.*
 
 class StreamingWithJaskson2Test {
 	data class MyPOJO(val s: String)
 
-	@TempDir private lateinit var dir: Path
+	@Test @Timeout(5) fun test() {
+		val out = QueueOutputStream()
+		val inp = out.newQueueInputStream()
 
-	private fun mapper(): ObjectMapper = jacksonObjectMapper().findAndRegisterModules()
+		val mapper = jacksonObjectMapper().findAndRegisterModules().enable(FLUSH_AFTER_WRITE_VALUE)
+		val generator = mapper.createGenerator(out)
+		val objectReader = mapper.reader()
+		val parser = objectReader.createParser(inp)
+		val readIter = objectReader.readValues(parser, MyPOJO::class.java)
 
-	@Test fun test() {
-		val file = dir / "file.io"
+		generator.writePOJO(MyPOJO("1"))
+		println(readIter.next())
 
-		val events = CopyOnWriteArrayList<String>()
-		val sema = Semaphore(0)
+		generator.writePOJO(MyPOJO("2"))
+		println(readIter.next())
 
-		val prod = thread(name = "producer") {
-			val m = mapper()
-			val fileWriter = Files.newBufferedWriter(file, CREATE_NEW)
-			val g = m.createGenerator(fileWriter)
-
-			repeat(5) { counter ->
-				val pojo = MyPOJO((1 + counter).toString())
-				events += "write: $pojo"
-				g.writePOJO(pojo)
-				fileWriter.flush()
-				sema.release()
-				Thread.sleep(50)
-			}
-		}
-
-		val cons = thread(name = "consumer") {
-			sema.acquire() // wait for file to exist at all
-
-			val m = mapper()
-			val r = m.reader()
-			val fileReader = Files.newBufferedReader(file)
-			val p = r.createParser(fileReader)
-
-			val iter = m.reader().readValues(p, MyPOJO::class.java)
-
-			while (true) {
-				val pojo = iter.next()
-				events += " read: $pojo"
-
-				try {
-					sema.acquire()
-				} catch (_: InterruptedException) {
-					break
-				}
-			}
-		}
-
-		prod.join()
-		cons.interrupt()
-
-		t(events).containsExactly(
-			"write: MyPOJO(s=1)",
-			" read: MyPOJO(s=1)",
-			"write: MyPOJO(s=2)",
-			" read: MyPOJO(s=2)",
-			"write: MyPOJO(s=3)",
-			" read: MyPOJO(s=3)",
-			"write: MyPOJO(s=4)",
-			" read: MyPOJO(s=4)",
-			"write: MyPOJO(s=5)",
-			" read: MyPOJO(s=5)",
-		)
-
-		t(file).hasContent("""
-			{"s":"1"} {"s":"2"} {"s":"3"} {"s":"4"} {"s":"5"}
-		""".trim())
+		generator.writePOJO(MyPOJO("3"))
+		println(readIter.next())
 	}
 }
